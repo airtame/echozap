@@ -32,13 +32,13 @@ func ZapLogger(log *zap.Logger) echo.MiddlewareFunc {
 func ZapLoggerWithConfig(log *zap.Logger, config Config) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			if config.Skipper(c) {
-				return next(c)
-			}
-
 			start := time.Now()
 
 			err := next(c)
+
+			if config.Skipper(c) {
+				return err
+			}
 
 			req := c.Request()
 			res := c.Response()

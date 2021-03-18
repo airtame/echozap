@@ -9,10 +9,33 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+type (
+	Config struct {
+		// Skipper defines a function to skip middleware.
+		Skipper Skipper
+	}
+
+	Skipper func(echo.Context) bool
+)
+
+var (
+	DefaultConfig = Config{
+		Skipper: DefaultSkipper,
+	}
+)
+
 // ZapLogger is a middleware and zap to provide an "access log" like logging for each request.
 func ZapLogger(log *zap.Logger) echo.MiddlewareFunc {
+	return ZapLoggerWithConfig(log, DefaultConfig)
+}
+
+func ZapLoggerWithConfig(log *zap.Logger, config Config) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			if config.Skipper(c) {
+				return next(c)
+			}
+
 			start := time.Now()
 
 			err := next(c)
@@ -56,4 +79,9 @@ func ZapLogger(log *zap.Logger) echo.MiddlewareFunc {
 			return nil
 		}
 	}
+}
+
+// DefaultSkipper returns false which processes the middleware.
+func DefaultSkipper(echo.Context) bool {
+	return false
 }

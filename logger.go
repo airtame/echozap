@@ -16,22 +16,23 @@ func ZapLogger(log *zap.Logger) echo.MiddlewareFunc {
 			start := time.Now()
 
 			err := next(c)
-			if err != nil {
-				log = log.With(zap.Error(err))
-				c.Error(err)
-			}
 
 			req := c.Request()
 			res := c.Response()
 
 			fields := []zapcore.Field{
 				zap.String("remote_ip", c.RealIP()),
-				zap.String("time", time.Since(start).String()),
+				zap.String("latency", time.Since(start).String()),
 				zap.String("host", req.Host),
 				zap.String("request", fmt.Sprintf("%s %s", req.Method, req.RequestURI)),
 				zap.Int("status", res.Status),
 				zap.Int64("size", res.Size),
 				zap.String("user_agent", req.UserAgent()),
+			}
+
+			if err != nil {
+				fields = append(fields, zap.Error(err))
+				c.Error(err)
 			}
 
 			id := req.Header.Get(echo.HeaderXRequestID)

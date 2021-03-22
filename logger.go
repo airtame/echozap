@@ -1,7 +1,7 @@
 package echozap
 
 import (
-	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -43,25 +43,49 @@ func ZapLoggerWithConfig(log *zap.Logger, config Config) echo.MiddlewareFunc {
 			req := c.Request()
 			res := c.Response()
 
+/*
+		Format: `{"time":"${time_rfc3339_nano}","id":"${id}","remote_ip":"${remote_ip}",` +
+			-                       `"host":"${host}","method":"${method}","uri":"${uri}","user_agent":"${user_agent}",` +
+			-                       `"status":${status},"error":"${error}", "internal_error":"${internal_error}","latency":${latency},"latency_human":"${
+latency_human}"` +
+			-                       `,"bytes_in":${bytes_in},"bytes_out":${bytes_out}}` + "\n",
+*/
+
 			fields := []zapcore.Field{
+				zap.String("time", time.Now().Format(time.RFC3339Nano)),
 				zap.String("remote_ip", c.RealIP()),
-				zap.String("latency", time.Since(start).String()),
 				zap.String("host", req.Host),
-				zap.String("request", fmt.Sprintf("%s %s", req.Method, req.RequestURI)),
-				zap.Int("status", res.Status),
-				zap.Int64("size", res.Size),
+				zap.String("method", req.Method),
+				zap.String("uri", req.RequestURI),
 				zap.String("user_agent", req.UserAgent()),
+				zap.Int("status", res.Status),
+				zap.Int64("latency", time.Since(start).Nanoseconds()),
+				zap.String("latency_human", time.Since(start).String()),
 			}
+
+			headerContentLengthRaw := req.Header.Get(echo.HeaderContentLength)
+			headerContentLength, parseErr := strconv.ParseInt(headerContentLengthRaw, 10, 64)
+			if parseErr != nil {
+				headerContentLength = 0
+			}
+			zap.Int64("bytes_in", headerContentLength)
+			zap.Int64("bytes_out", res.Size)
 
 			if err != nil {
 				fields = append(fields, zap.Error(err))
 				c.Error(err)
+
+				if he, ok := err.(*echo.HTTPError); ok {
+					if he.Internal != nil {
+						fields = append(fields, zap.NamedError("internal_error", he.Internal))
+					}
+				}
 			}
 
 			id := req.Header.Get(echo.HeaderXRequestID)
 			if id == "" {
 				id = res.Header().Get(echo.HeaderXRequestID)
-				fields = append(fields, zap.String("request_id", id))
+				fields = append(fields, zap.String("id", id))
 			}
 
 			n := res.Status

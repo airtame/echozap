@@ -68,8 +68,8 @@ latency_human}"` +
 			if parseErr != nil {
 				headerContentLength = 0
 			}
-			zap.Int64("bytes_in", headerContentLength)
-			zap.Int64("bytes_out", res.Size)
+			fields = append(fields, zap.Int64("bytes_in", headerContentLength))
+			fields = append(fields, zap.Int64("bytes_out", res.Size))
 
 			if err != nil {
 				fields = append(fields, zap.Error(err))

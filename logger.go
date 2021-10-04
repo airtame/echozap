@@ -1,18 +1,26 @@
 package echozap
 
 import (
-	"strconv"
-	"time"
-
+	"context"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/gommon/bytes"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"io/ioutil"
+	"strconv"
+	"time"
 )
 
 type (
 	Config struct {
 		// Skipper defines a function to skip middleware.
 		Skipper Skipper
+
+		// ContextLoggerKey defines the key in which a zap logger may be set
+		ContextLoggerKey string
+
+		// PrintBody defines if the body of the request should be printed, if it exists
+		PrintBody bool
 	}
 
 	Skipper func(echo.Context) bool
@@ -20,7 +28,9 @@ type (
 
 var (
 	DefaultConfig = Config{
-		Skipper: DefaultSkipper,
+		Skipper:          DefaultSkipper,
+		ContextLoggerKey: `contextLogger`,
+		PrintBody:        true,
 	}
 )
 
@@ -41,6 +51,10 @@ func ZapLoggerWithConfig(log *zap.Logger, config Config) echo.MiddlewareFunc {
 
 			if config.Skipper(c) {
 				return err
+			}
+
+			if l := GetContextLogger(c.Request().Context(), config.ContextLoggerKey); l != nil {
+				log = l
 			}
 
 			req := c.Request()
@@ -65,6 +79,15 @@ func ZapLoggerWithConfig(log *zap.Logger, config Config) echo.MiddlewareFunc {
 			}
 			fields = append(fields, zap.Int64("bytes_in", headerContentLength))
 			fields = append(fields, zap.Int64("bytes_out", res.Size))
+
+			if config.PrintBody && headerContentLength > 0 && headerContentLength < 1*bytes.KB {
+				body, err := ioutil.ReadAll(req.Body)
+				if err != nil {
+					log.Warn("echozap error decoding request body", zap.Error(err))
+				} else {
+					fields = append(fields, zap.String("body", string(body)))
+				}
+			}
 
 			if err != nil {
 				fields = append(fields, zap.Error(err))
@@ -98,6 +121,19 @@ func ZapLoggerWithConfig(log *zap.Logger, config Config) echo.MiddlewareFunc {
 			return nil
 		}
 	}
+}
+
+func GetContextLogger(ctx context.Context, contextLoggerKey string) *zap.Logger {
+	l := ctx.Value(contextLoggerKey)
+
+	if l != nil {
+		logger, ok := l.(*zap.Logger)
+		if ok {
+			return logger
+		}
+		return nil
+	}
+	return nil
 }
 
 // DefaultSkipper returns false which processes the middleware.

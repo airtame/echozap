@@ -2,6 +2,7 @@ package echozap
 
 import (
 	"context"
+	"fmt"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/gommon/bytes"
 	"go.uber.org/zap"
@@ -16,10 +17,10 @@ type (
 		// Skipper defines a function to skip middleware.
 		Skipper Skipper
 
-		// ContextLoggerKey defines the key in which a zap logger may be set
-		ContextLoggerKey string
+		// ContextKeys defines the keys which should be added to the logger, as fields, from the context.
+		ContextKeys []interface{}
 
-		// PrintBody defines if the body of the request should be printed, if it exists
+		// PrintBody defines if the body of the request should be printed, if it exists.
 		PrintBody bool
 	}
 
@@ -28,9 +29,9 @@ type (
 
 var (
 	DefaultConfig = Config{
-		Skipper:          DefaultSkipper,
-		ContextLoggerKey: `contextLogger`,
-		PrintBody:        true,
+		Skipper:     DefaultSkipper,
+		ContextKeys: nil,
+		PrintBody:   true,
 	}
 )
 
@@ -53,8 +54,8 @@ func ZapLoggerWithConfig(log *zap.Logger, config Config) echo.MiddlewareFunc {
 				return err
 			}
 
-			if l := GetContextLogger(c.Request().Context(), config.ContextLoggerKey); l != nil {
-				log = l
+			if config.ContextKeys != nil {
+				extendWithCtx(c.Request().Context(), log, config.ContextKeys)
 			}
 
 			req := c.Request()
@@ -123,20 +124,18 @@ func ZapLoggerWithConfig(log *zap.Logger, config Config) echo.MiddlewareFunc {
 	}
 }
 
-func GetContextLogger(ctx context.Context, contextLoggerKey string) *zap.Logger {
-	l := ctx.Value(contextLoggerKey)
-
-	if l != nil {
-		logger, ok := l.(*zap.Logger)
-		if ok {
-			return logger
-		}
-		return nil
-	}
-	return nil
-}
-
 // DefaultSkipper returns false which processes the middleware.
 func DefaultSkipper(echo.Context) bool {
 	return false
+}
+
+func extendWithCtx(ctx context.Context, log *zap.Logger, keys ...interface{}) {
+	for _, key := range keys {
+		v := ctx.Value(key)
+		if v == nil {
+			continue
+		}
+
+		log.With(zap.Any(fmt.Sprintf("%v", key), v))
+	}
 }

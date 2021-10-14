@@ -55,7 +55,7 @@ func ZapLoggerWithConfig(log *zap.Logger, config Config) echo.MiddlewareFunc {
 			}
 
 			if config.ContextKeys != nil {
-				extendWithCtx(c.Request().Context(), log, config.ContextKeys)
+				log = extendWithCtx(c.Request().Context(), log, config.ContextKeys)
 			}
 
 			req := c.Request()
@@ -129,13 +129,15 @@ func DefaultSkipper(echo.Context) bool {
 	return false
 }
 
-func extendWithCtx(ctx context.Context, log *zap.Logger, keys ...interface{}) {
+func extendWithCtx(ctx context.Context, log *zap.Logger, keys []interface{}) *zap.Logger {
 	for _, key := range keys {
 		v := ctx.Value(key)
 		if v == nil {
 			continue
 		}
 
-		log.With(zap.Any(fmt.Sprintf("%v", key), v))
+		log = log.With(zap.Any(fmt.Sprintf("%v", key), v))
 	}
+
+	return log
 }

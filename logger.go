@@ -3,13 +3,14 @@ package echozap
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
+	"strconv"
+	"time"
+
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/gommon/bytes"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"io/ioutil"
-	"strconv"
-	"time"
 )
 
 type (
@@ -27,13 +28,11 @@ type (
 	Skipper func(echo.Context) bool
 )
 
-var (
-	DefaultConfig = Config{
-		Skipper:     DefaultSkipper,
-		ContextKeys: nil,
-		PrintBody:   true,
-	}
-)
+var DefaultConfig = Config{
+	Skipper:     DefaultSkipper,
+	ContextKeys: nil,
+	PrintBody:   true,
+}
 
 // ZapLogger is a middleware and zap to provide an "access log" like logging for each request.
 func ZapLogger(log *zap.Logger) echo.MiddlewareFunc {
@@ -54,10 +53,6 @@ func ZapLoggerWithConfig(log *zap.Logger, config Config) echo.MiddlewareFunc {
 				return err
 			}
 
-			if config.ContextKeys != nil {
-				log = extendWithCtx(c.Request().Context(), log, config.ContextKeys)
-			}
-
 			req := c.Request()
 			res := c.Response()
 
@@ -72,6 +67,9 @@ func ZapLoggerWithConfig(log *zap.Logger, config Config) echo.MiddlewareFunc {
 				zap.Int64("latency", time.Since(start).Nanoseconds()),
 				zap.String("latency_human", time.Since(start).String()),
 			}
+
+			// add context fields
+			fields = append(fields, getContextFields(req.Context(), config.ContextKeys)...)
 
 			headerContentLengthRaw := req.Header.Get(echo.HeaderContentLength)
 			headerContentLength, parseErr := strconv.ParseInt(headerContentLengthRaw, 10, 64)
@@ -129,15 +127,17 @@ func DefaultSkipper(echo.Context) bool {
 	return false
 }
 
-func extendWithCtx(ctx context.Context, log *zap.Logger, keys []interface{}) *zap.Logger {
+func getContextFields(ctx context.Context, keys []interface{}) []zapcore.Field {
+	fields := []zapcore.Field{}
+
 	for _, key := range keys {
 		v := ctx.Value(key)
 		if v == nil {
 			continue
 		}
 
-		log = log.With(zap.Any(fmt.Sprintf("%v", key), v))
+		fields = append(fields, zap.Any(fmt.Sprintf("%v", key), v))
 	}
 
-	return log
+	return fields
 }

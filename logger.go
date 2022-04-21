@@ -23,6 +23,9 @@ type (
 
 		// PrintBody defines if the body of the request should be printed, if it exists.
 		PrintBody bool
+
+		// LogLevel selects the log level to use depending on HTTP status.
+		LogLevel func(status int) zapcore.Level
 	}
 
 	Skipper func(echo.Context) bool
@@ -32,6 +35,7 @@ var DefaultConfig = Config{
 	Skipper:     DefaultSkipper,
 	ContextKeys: nil,
 	PrintBody:   true,
+	LogLevel:    DefaultLogLevel,
 }
 
 // ZapLogger is a middleware and zap to provide an "access log" like logging for each request.
@@ -106,15 +110,23 @@ func ZapLoggerWithConfig(log *zap.Logger, config Config) echo.MiddlewareFunc {
 			}
 
 			n := res.Status
+
+			var logLevel zapcore.Level
+			if config.LogLevel != nil {
+				logLevel = config.LogLevel(n)
+			} else {
+				logLevel = DefaultLogLevel(n)
+			}
+
 			switch {
 			case n >= 500:
-				log.With(zap.Error(err)).Error("Server error", fields...)
+				logWithLevel(log.With(zap.Error(err)), logLevel, "Server error", fields...)
 			case n >= 400:
-				log.With(zap.Error(err)).Warn("Client error", fields...)
+				logWithLevel(log, logLevel, "Client error", fields...)
 			case n >= 300:
-				log.Info("Redirection", fields...)
+				logWithLevel(log, logLevel, "Redirection", fields...)
 			default:
-				log.Info("Success", fields...)
+				logWithLevel(log, logLevel, "Success", fields...)
 			}
 
 			return nil
@@ -125,6 +137,18 @@ func ZapLoggerWithConfig(log *zap.Logger, config Config) echo.MiddlewareFunc {
 // DefaultSkipper returns false which processes the middleware.
 func DefaultSkipper(echo.Context) bool {
 	return false
+}
+
+// DefaultLogLevel is Error for HTTP 5xx, Warn for 4xx, and Info otherwise.
+func DefaultLogLevel(status int) zapcore.Level {
+	switch {
+	case status >= 500:
+		return zapcore.ErrorLevel
+	case status >= 400:
+		return zapcore.WarnLevel
+	default:
+		return zapcore.InfoLevel
+	}
 }
 
 func getContextFields(ctx context.Context, keys []interface{}) []zapcore.Field {
@@ -140,4 +164,10 @@ func getContextFields(ctx context.Context, keys []interface{}) []zapcore.Field {
 	}
 
 	return fields
+}
+
+func logWithLevel(logger *zap.Logger, level zapcore.Level, msg string, fields ...zapcore.Field) {
+	if ce := logger.Check(level, msg); ce != nil {
+		ce.Write(fields...)
+	}
 }
